@@ -10,6 +10,9 @@ namespace Console
 
 		std::string GetVariableString(const RE::GFxMovie* a_movie, const char* a_path);
 		std::size_t GetVariableInt(const RE::GFxMovie* a_movie, const char* a_path);
+
+		std::string  toUTF8(const wchar_t* lpStr, size_t cchSize);
+		std::wstring toUTF16(const char* lpStr, size_t cbSize);
 	}
 
 	class Manager final :

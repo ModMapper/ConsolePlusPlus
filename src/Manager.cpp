@@ -6,24 +6,28 @@ namespace Console
 	namespace detail
 	{
 		// https://stackoverflow.com/a/14763025
+ 		// Modified to support Unicode
 		std::string GetClipboardText()
 		{
 			std::string text;
 
 			// Try opening the clipboard
-			if (!IsClipboardFormatAvailable(CF_TEXT) || !OpenClipboard(nullptr)) {
+			if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(nullptr)) {
 				return text;
 			}
 
 			// Get handle of clipboard object for ANSI text
-			const HANDLE hData = GetClipboardData(CF_TEXT);
+			const HANDLE hData = GetClipboardData(CF_UNICODETEXT);
 			if (hData == nullptr) {
 				return text;
 			}
 
 			// Lock the handle to get the actual text pointer
-			if (const auto pszText = static_cast<const char*>(GlobalLock(hData)); pszText != nullptr) {
-				text = pszText;
+			const auto cbSize = GlobalSize(hData);
+			if (const auto pszText = static_cast<const wchar_t*>(GlobalLock(hData)); pszText != nullptr) {
+				text = toUTF8(pszText, cbSize / sizeof(wchar_t));
+				// remove null terminator char
+				text.resize(text.length() - 1);
 			}
 
 			// Release the lock
@@ -55,6 +59,28 @@ namespace Console
 			RE::GFxValue intVar;
 			a_movie->GetVariable(&intVar, a_path);
 			return intVar.GetUInt();
+		}
+
+		std::string toUTF8(const wchar_t* lpStr, size_t cchSize)
+		{
+			int cbSize = WideCharToMultiByte(CP_UTF8, 0, lpStr, (int)cchSize, nullptr, 0, nullptr, nullptr);
+			if (0 < cbSize) {
+				std::string str(cbSize, '\0'); 
+				WideCharToMultiByte(CP_UTF8, 0, lpStr, (int)cchSize, &str[0], cbSize, nullptr, nullptr);
+				return str;
+			}
+			return std::string();
+		}
+
+		std::wstring toUTF16(const char* lpStr, size_t cbSize)
+		{
+			int cchSize = MultiByteToWideChar(CP_UTF8, 0, lpStr, (int)cbSize, nullptr, 0);
+			if (0 < cchSize) {
+				std::wstring str(cchSize, '\0'); 
+				MultiByteToWideChar(CP_UTF8, 0, lpStr, (int)cbSize, &str[0], cchSize);
+				return str;
+			}
+			return std::wstring();
 		}
 	}
 
@@ -216,44 +242,28 @@ namespace Console
 							// paste
 							if (pasteAtEnd) {
 								// append new text to old
-								// erase key
 								auto newText = oldText + clipboardText;
-								if (!oldText.empty()) {
-									newText.erase(oldText.length() - 1, 1);
-								}
 								// overwrite command text
 								consoleMovie->SetVariable("_global.Console.ConsoleInstance.CommandEntry.text", newText.c_str());
 								// move cursor to end of text
 								const RE::GFxValue args[2]{ newText.length(), newText.length() };
 								consoleMovie->Invoke("Selection.setSelection", nullptr, args, 2);
 							} else {
-								// erase text if only key pressed
-								if (oldText.size() == 1) {
-									oldText.erase(0, 1);
-								}
-								std::string newText = oldText;
-								bool        appended{ false };
 								// get cursor position
-								const auto cursorPos = detail::GetVariableInt(consoleMovie, "_global.Console.ConsoleInstance.CommandEntry.caretIndex");
-								// insert at cursor pos
-								if (oldText.size() > cursorPos) {
-									appended = false;
-									newText.insert(cursorPos, clipboardText);
-									newText.erase(cursorPos - 1, 1);
-								} else {  // or append if cursor is at end
-									appended = true;
-									newText += clipboardText;
-									if (!oldText.empty()) {
-										newText.erase(oldText.length() - 1, 1);
-									}
-								}
+								const auto caretIndex = detail::GetVariableInt(consoleMovie, "_global.Console.ConsoleInstance.CommandEntry.caretIndex");
+								const auto selectionLength = detail::GetVariableInt(consoleMovie, "_global.Console.ConsoleInstance.CommandEntry.selectionLength");
+
+								// calculate unicode position
+								const auto text = detail::toUTF16(oldText.c_str(), oldText.length());
+								const auto clip = detail::toUTF16(clipboardText.c_str(), clipboardText.length());
+								const auto fulltext = text.substr(0, caretIndex) + clip + text.substr(caretIndex + selectionLength);
+								const auto newText = detail::toUTF8(fulltext.c_str(), fulltext.length());
+
 								//	overwrite command text
 								consoleMovie->SetVariable("_global.Console.ConsoleInstance.CommandEntry.text", newText.c_str());
+
 								// move cursor
-								const auto index =
-									appended ?
-										newText.length() :
-										cursorPos + (clipboardText.length() - 1);
+								const auto         index = caretIndex + clip.length();
 								const RE::GFxValue args[2]{ index, index };
 								consoleMovie->Invoke("Selection.setSelection", nullptr, args, 2);
 							}
