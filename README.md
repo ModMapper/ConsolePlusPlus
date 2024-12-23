@@ -1,8 +1,11 @@
 # Console++
 
-Adds copy-paste to console
-
+Adds copy-paste functionality to the console  
 Caches console commands between game instances
+
+Original author: powerofthree  
+
+This version includes additional features such as Unicode support.  
 
 * [SSE/AE](https://www.nexusmods.com/skyrimspecialedition/mods/79975)
 * [VR](https://www.nexusmods.com/skyrimspecialedition/mods/68032)
